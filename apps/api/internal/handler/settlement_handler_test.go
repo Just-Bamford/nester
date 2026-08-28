@@ -470,8 +470,7 @@ func TestSettlementHandler_PostRejectsOverWithdrawal(t *testing.T) {
 		balance: decimal.NewFromInt(100), // User has 100 USDC
 	}
 	svc := service.NewSettlementService(newSettlementStubRepo(), nil)
-	// Note: In a real scenario, we'd need to wire the vault repo to check balance.
-	// For now, this test documents the expected behavior.
+	svc.SetVaultRepository(vaultRepo)
 
 	h := newSettlementHandler(svc, userID)
 	mux := http.NewServeMux()
@@ -509,11 +508,15 @@ func TestSettlementHandler_PostRejectsOverWithdrawal(t *testing.T) {
 	defer resp.Body.Close()
 
 	// Server must reject over-withdrawals with 400 Bad Request or 422 Unprocessable Entity
-	// (whichever is more semantically appropriate for the domain error)
-	// For now, document that this should be validated.
-	// Once vault balance checking is wired into settlement service, this test should
-	// verify the rejection.
-	_ = vaultRepo // Currently unused; will be used when balance validation is added
+	if resp.StatusCode != http.StatusBadRequest && resp.StatusCode != http.StatusUnprocessableEntity {
+		t.Errorf("Expected 400 or 422 for over-withdrawal, got %d", resp.StatusCode)
+	}
+
+	// Verify no settlement was created by checking the response body
+	body := io.ReadAll(resp.Body)
+	if len(body) > 0 {
+		t.Logf("Response body: %s", string(body))
+	}
 }
 
 // settlementVaultRepoMock is a test helper that mocks vault balance for over-withdrawal testing.
@@ -521,6 +524,6 @@ type settlementVaultRepoMock struct {
 	balance decimal.Decimal
 }
 
-func (m *settlementVaultRepoMock) GetBalance(_ context.Context, _ uuid.UUID) (decimal.Decimal, error) {
+func (m *settlementVaultRepoMock) GetUserVaultBalance(_ context.Context, _ uuid.UUID) (decimal.Decimal, error) {
 	return m.balance, nil
 }

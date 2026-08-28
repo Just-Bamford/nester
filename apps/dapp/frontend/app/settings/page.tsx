@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, User, Bell, Globe, Monitor } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -188,11 +189,10 @@ function useKYCState(userId: string | undefined) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch KYC status from server
+  // Fetch KYC status from server (authenticated endpoint that uses session user ID)
   const fetchStatus = useCallback(async () => {
-    if (!userId) return;
     try {
-      const resp = await fetch(`/api/v1/users/kyc/${userId}`);
+      const resp = await fetch(`/api/v1/users/me/kyc`);
       if (!resp.ok) {
         throw new Error(`Failed to fetch KYC status: ${resp.statusText}`);
       }
@@ -208,19 +208,18 @@ function useKYCState(userId: string | undefined) {
         err instanceof Error ? err.message : "Failed to load KYC status",
       );
     }
-  }, [userId]);
+  }, []);
 
-  // Load status on mount and when userId changes
+  // Load status on mount
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
 
   const submitKYC = async (formData: FormData) => {
-    if (!userId) return;
     setIsSubmitting(true);
     setError(null);
     try {
-      const resp = await fetch(`/api/v1/users/kyc/${userId}`, {
+      const resp = await fetch(`/api/v1/users/me/kyc`, {
         method: "POST",
         body: formData,
       });
@@ -260,7 +259,7 @@ export default function SettingsPage() {
   const { locale, setLocale } = useLocale();
   const t = useTranslations();
 
-  const kyc = useKYCState(address);
+  const kyc = useKYCState();
 
   useEffect(() => {
     if (!isConnected) router.push("/");

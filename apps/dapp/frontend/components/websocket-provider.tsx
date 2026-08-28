@@ -114,7 +114,8 @@ export function WebSocketProvider({
   const { addNotification, setConnectionState } = useNotifications();
 
   // Get current token from token store. Real session token, not a forged one.
-  // Pass a token getter function to useWebSocket so it always uses the current token.
+  // Pass a token getter function to useWebSocket so it always uses the current token
+  // before each connection attempt (not just at render time).
   const getToken = useCallback(() => getAccessToken(), []);
 
   const walletChannels = useMemo<string[]>(() => {
@@ -345,7 +346,7 @@ export function WebSocketProvider({
     manualReconnect,
   } = useWebSocket({
     url: WS_URL,
-    token: getToken(),
+    getToken,
     channels,
     onEvent: handleEvent,
     onPoll: refreshBalances,

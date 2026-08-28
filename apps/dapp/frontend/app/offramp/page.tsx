@@ -158,6 +158,7 @@ export default function OfframpPage() {
   const [userBalance, setUserBalance] = useState<number | null>(null);
   const [balanceLoading, setBalanceLoading] = useState(true);
   const [balanceError, setBalanceError] = useState<string | null>(null);
+  const [selectedVaultId, setSelectedVaultId] = useState<string | null>(null);
 
   // Dynamic form schema based on loaded balance
   const formSchema = createFormSchema(userBalance ?? 0);
@@ -170,6 +171,12 @@ export default function OfframpPage() {
         const portfolio =
           await apiRequest<PortfolioSummary>("/portfolio/summary");
         setUserBalance(portfolio.total_balance_usd);
+
+        // Fetch vaults to get the first vault ID for settlement
+        const vaults = await apiRequest<Array<{ id: string }>>("/vaults");
+        if (vaults && vaults.length > 0) {
+          setSelectedVaultId(vaults[0].id);
+        }
       } catch (err) {
         setBalanceError(
           err instanceof Error ? err.message : "Failed to load balance",
@@ -379,25 +386,40 @@ export default function OfframpPage() {
 
     // Call real settlement API
     try {
+      // Build destination from payoutMode
+      let destination: any;
+      if (payoutMode.type === "saved") {
+        destination = {
+          type: "bank_transfer",
+          provider: "bank",
+          account_number: payoutMode.account.account_number,
+          account_name: payoutMode.account.account_name,
+          bank_code: payoutMode.account.bank_code,
+        };
+      } else {
+        // Manual mode - use form data
+        destination = {
+          type: "bank_transfer",
+          provider: "bank",
+          account_number: data.accountNumber,
+          account_name: resolvedName || data.accountName,
+          bank_code: data.bankCode,
+        };
+      }
+
       const settlement = await apiRequest<{
         id: string;
       }>("/settlements", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          vault_id: "placeholder", // In real usage, this would be the actual vault ID
+          vault_id: selectedVaultId || "", // Use the real vault ID from user's vaults
           amount: numericAmount.toString(),
           currency: sendAsset.symbol,
           fiat_currency: receiveCurrency.symbol,
           fiat_amount: displayReceive.toString(),
           exchange_rate: receiveCurrency.rate.toString(),
-          destination: {
-            type: "bank_transfer",
-            provider: "bank",
-            account_number: data.accountNumber,
-            account_name: resolvedName,
-            bank_code: data.bankCode,
-          },
+          destination,
         }),
       });
 
@@ -408,10 +430,8 @@ export default function OfframpPage() {
           title: "Withdrawal Submitted",
           message: `Withdrew ${numericAmount.toLocaleString("en-US", {
             maximumFractionDigits: 2,
-          })} ${sendAsset.symbol} to ${accountInfo?.bank_name ?? selectedBankCode} ending in ${data.accountNumber.slice(-4)}.`,
-          actionUrl: settlement.id
-            ? getExplorerTxUrl(settlement.id)
-            : undefined,
+          })} ${sendAsset.symbol} to ${accountInfo?.bank_name ?? effectiveBankCode} ending in ${destination.account_number.slice(-4)}.`,
+          // TODO: Add explorer link once settlement returns on-chain transaction hash
           actionLabel: "View Transaction",
         },
         { showToast: true },

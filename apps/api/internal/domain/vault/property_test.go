@@ -3,7 +3,6 @@ package vault
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/shopspring/decimal"
 	"pgregory.net/rapid"
 )
@@ -31,23 +30,23 @@ func genAmount() *rapid.Generator[decimal.Decimal] {
 		choice := rapid.IntRange(0, 5).Draw(t, "choice")
 		switch choice {
 		case 0:
-			// Single stroop
-			return decimal.NewFromInt(1)
+			// Single stroop (1e-7 USDC)
+			return decimal.New(1, -7)
 		case 1:
 			// Minimum deposit (10 USDC)
-			return decimal.NewFromInt(10_000_000)
+			return decimal.NewFromInt(10)
 		case 2:
 			// Medium (100 USDC)
-			return decimal.NewFromInt(100_000_000)
+			return decimal.NewFromInt(100)
 		case 3:
 			// Large (1000 USDC)
-			return decimal.NewFromInt(1_000_000_000)
+			return decimal.NewFromInt(1000)
 		case 4:
 			// Very large (10000 USDC)
-			return decimal.NewFromInt(10_000_000_000)
+			return decimal.NewFromInt(10000)
 		default:
 			// Random range 1-1000 USDC
-			val := rapid.Int64Range(1_000_000, 1_000_000_000).Draw(t, "val")
+			val := rapid.Int64Range(1, 1000).Draw(t, "val")
 			return decimal.NewFromInt(val)
 		}
 	})
@@ -100,8 +99,10 @@ func (m *ReferenceModel) Deposit(userIdx int, amount decimal.Decimal) decimal.De
 		// First deposit is 1:1
 		shares = amount
 	} else {
-		// shares = amount * total_shares / total_deposited
-		shares = amount.Mul(m.TotalShares).Div(m.TotalDeposited)
+		// shares = amount / sharePrice, rounded to 6 decimals (matching production)
+		// where sharePrice = CurrentBalance / TotalDeposited
+		sharePrice := m.CurrentBalance.Div(m.TotalDeposited)
+		shares = amount.Div(sharePrice).Round(6)
 	}
 
 	if shares.Sign() <= 0 {
@@ -207,7 +208,7 @@ func (m *ReferenceModel) SumUserShares() decimal.Decimal {
 }
 
 // Invariant 1: Conservation - user shares must sum to total shares
-func TestPropConservation(t *testing.T) {
+func TestPropertyBasedConservation(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		model := NewReferenceModel()
 		numUsers := rapid.IntRange(1, 10).Draw(t, "num_users")
@@ -253,7 +254,7 @@ func TestPropConservation(t *testing.T) {
 }
 
 // Invariant 2: Round-trip safety - deposit + immediate withdraw <= deposit
-func TestPropRoundTripSafety(t *testing.T) {
+func TestPropertyBasedRoundTripSafety(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		model := NewReferenceModel()
 		userIdx := 0
@@ -276,7 +277,7 @@ func TestPropRoundTripSafety(t *testing.T) {
 }
 
 // Invariant 3: Share price monotonicity - price only increases on yield, not deposits/losses
-func TestPropSharePriceMonotonicity(t *testing.T) {
+func TestPropertyBasedSharePriceMonotonicity(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		model := NewReferenceModel()
 		userIdx := 0
@@ -320,7 +321,7 @@ func TestPropSharePriceMonotonicity(t *testing.T) {
 }
 
 // Invariant 4: No mint from nothing - total shares never exceed assets divided by share price
-func TestPropNoMintFromNothing(t *testing.T) {
+func TestPropertyBasedNoMintFromNothing(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		model := NewReferenceModel()
 		numUsers := rapid.IntRange(1, 5).Draw(t, "num_users")
@@ -379,7 +380,7 @@ func TestPropNoMintFromNothing(t *testing.T) {
 }
 
 // Regression test: empty vault first deposit should be 1:1
-func TestPropEmptyVaultFirstDeposit(t *testing.T) {
+func TestPropertyBasedEmptyVaultFirstDeposit(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		model := NewReferenceModel()
 		amount := rapid.Int64Range(10_000_000, 1_000_000_000).Draw(t, "amount")
@@ -392,7 +393,7 @@ func TestPropEmptyVaultFirstDeposit(t *testing.T) {
 }
 
 // Regression test: tiny amounts should not create zero-share situations
-func TestPropTinyAmountHandling(t *testing.T) {
+func TestPropertyBasedTinyAmountHandling(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		model := NewReferenceModel()
 

@@ -201,7 +201,6 @@ func TestUserHandler_KYCSubmissionAndRetrieval(t *testing.T) {
 
 	// Submit KYC with multipart form
 	body := new(bytes.Buffer)
-	writer := io.MultiWriter(body)
 
 	// Create a minimal multipart form manually
 	formBody := `--boundary
